@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SAT Math Study Engine & Leitner SRS</title>
+  
+  <!-- Tailwind CSS per UI reattiva su PC e iPad -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- KaTeX per il rendering istantaneo delle formule matematiche -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+  
+  <!-- JSXGraph per la generazione visiva dinamica di grafici e geometria -->
+  <link rel="stylesheet" type="text/css" href="https://jsxgraph.org/distrib/jsxgraph.css" />
+  <script type="text/javascript" src="https://jsxgraph.org/distrib/jsxgraphcore.js"></script>
+
+  <!-- PDF.js per estrarre testo ed esempi dai tuoi libri in PDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+  <style>
+    @keyframes pulse-urgent {
+      0%, 100% { background-color: #ef4444; color: white; transform: scale(1); }
+      50% { background-color: #7f1d1d; color: #fecaca; transform: scale(1.04); }
+    }
+    .timer-overtime {
+      animation: pulse-urgent 0.9s infinite;
+      border-color: #f87171 !important;
+    }
+    .timer-warning {
+      background-color: #f59e0b;
+      color: #1e293b;
+    }
+    /* Ottimizzazione touch per iPad */
+    button, input, select { touch-action: manipulation; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 h-screen flex flex-col overflow-hidden font-sans select-none">
+
+  <!-- TOP BAR: Titolo, Statistiche Leitner, Timer SAT e Tasti Rapidi -->
+  <header class="bg-slate-900 border-b border-slate-800 px-4 py-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
+    <div class="flex items-center gap-3">
+      <div class="bg-indigo-600 p-2 rounded-lg font-black text-lg tracking-wider">SAT // MATH</div>
+      <div>
+        <h1 class="font-bold text-sm md:text-base leading-tight">Book Parser & Leitner Trainer</h1>
+        <p class="text-xs text-slate-400" id="bookStatus">Modalità Demo Attiva (Carica un PDF o API Key per generare dal libro)</p>
+      </div>
+    </div>
+
+    <!-- Timer Digital SAT (Target: 95s per domanda) -->
+    <div class="flex items-center gap-3">
+      <div id="timerBox" class="flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-800 border border-slate-700 font-mono text-lg font-bold transition-all">
+        <span>⏱️</span>
+        <span id="timerDisplay">00:00</span>
+        <span class="text-xs font-normal text-slate-400 hidden sm:inline">/ 01:35 target</span>
+      </div>
+
+      <button onclick="toggleDesmosModal()" class="bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition">
+        <span>📈</span> <span class="hidden md:inline">Calcolatrice</span> Desmos
+      </button>
+
+      <button onclick="toggleCheatSheet()" class="bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition">
+        <span>📐</span> CheatSheet
+      </button>
+
+      <button onclick="toggleSettings()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 p-2 rounded-lg text-sm border border-slate-700">
+        ⚙️
+      </button>
+    </div>
+  </header>
+
+  <!-- MAIN WORKSPACE -->
+  <div class="flex-1 flex overflow-hidden">
+    
+    <!-- SIDEBAR SINISTRA: Caricamento Libro, Albero Argomenti e Scatole di Leitner -->
+    <aside class="w-72 md:w-80 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 overflow-y-auto">
+      
+      <!-- Sezione 1: Carica Libro PDF -->
+      <div class="p-4 border-b border-slate-800">
+        <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">1. Carica Libro / Capitolo (PDF)</label>
+        <input type="file" id="pdfUpload" accept="application/pdf" class="block w-full text-xs text-slate-300
+          file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0
+          file:text-xs file:font-semibold file:bg-indigo-600 file:text-white
+          hover:file:bg-indigo-500 cursor-pointer bg-slate-800 rounded-lg p-1 border border-slate-700" />
+        <div id="pdfExtractControls" class="hidden mt-3 space-y-2">
+          <div class="flex items-center gap-2 text-xs">
+            <span>Da pag:</span>
+            <input type="number" id="pageStart" value="1" min="1" class="w-14 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-center">
+            <span>A pag:</span>
+            <input type="number" id="pageEnd" value="5" min="1" class="w-14 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-center">
+          </div>
+          <button onclick="extractAndGenerateFromPDF()" id="btnGeneratePDF" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-1.5 rounded-lg text-xs font-bold transition">
+            ⚡ Estrai Argomenti e Genera Esercizi
+          </button>
+        </div>
+      </div>
+
+      <!-- Sezione 2: Scatole di Leitner (Spaced Repetition) -->
+      <div class="p-4 border-b border-slate-800">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-400">2. Scatole di Leitner (SRS)</span>
+          <button onclick="startLeitnerReview()" class="text-xs bg-rose-600 hover:bg-rose-500 px-2 py-0.5 rounded font-semibold text-white">Ripassa Errori</button>
+        </div>
+        <div class="grid grid-cols-5 gap-1.5 text-center" id="leitnerBoxesUI">
+          <!-- Popolato via JS -->
+        </div>
+        <p class="text-[11px] text-slate-400 mt-2 leading-tight">
+          Gli errori e gli <b>Skip</b> finiscono nella <b>Box 1</b>. Rispondi correttamente per promuoverli fino alla Box 5.
+        </p>
+      </div>
+
+      <!-- Sezione 3: Argomenti e Sub-argomenti del Libro -->
+      <div class="p-4 flex-1">
+        <span class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">3. Argomenti & Sub-Argomenti</span>
+        <div id="topicsTree" class="space-y-3 text-sm">
+          <!-- Popolato dinamicamente via JS -->
+        </div>
+      </div>
+    </aside>
+
+    <!-- AREA CENTRALE: Esercizio, Input, Diagnostica e Spiegazione Visiva -->
+    <main class="flex-1 flex flex-col overflow-y-auto p-4 md:p-6 space-y-6">
+      
+      <!-- Breadcrumb Argomento Corrente -->
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+        <div>
+          <span id="currentTopicBadge" class="text-xs font-semibold uppercase px-2.5 py-1 bg-indigo-950 text-indigo-300 border border-indigo-800 rounded-full">Algebra</span>
+          <span id="currentSubtopicBadge" class="text-xs text-slate-400 ml-2">Sistemi Lineari e Parametri</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="questionSourceBadge" class="text-xs bg-slate-800 text-slate-300 px-2.5 py-1 rounded border border-slate-700">Esempio Simile al Libro</span>
+          <span id="leitnerStatusBadge" class="text-xs bg-slate-800 text-amber-400 px-2.5 py-1 rounded border border-slate-700">Box 1</span>
+        </div>
+      </div>
+
+      <!-- Card Problema e Visualizzazione -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        <!-- Colonna Sinistra: Testo del Problema + Interazione Risposta -->
+        <div class="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-5 shadow-lg">
+          <div class="flex justify-between items-start">
+            <h2 class="text-base font-bold text-slate-300" id="questionTitle">Problema #1</h2>
+            <button onclick="generateTwinQuestion()" class="text-xs bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700 px-2.5 py-1 rounded transition">
+              🔄 Genera Variante Numerica
+            </button>
+          </div>
+
+          <div id="questionText" class="text-base md:text-lg leading-relaxed text-slate-100 bg-slate-950/60 p-4 rounded-lg border border-slate-800/80 select-text">
+            <!-- Testo KaTeX -->
+          </div>
+
+          <!-- Opzioni Scelta Multipla o Input Libero (Student-Produced Response) -->
+          <div id="optionsContainer" class="space-y-2.5"></div>
+
+          <!-- Input e Spiegazione Ragionamento dello Studente -->
+          <div class="space-y-3 pt-2 border-t border-slate-800">
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">La tua risposta finale (o seleziona sopra):</label>
+              <input type="text" id="userAnswerInput" placeholder="Es: A, oppure 14.5, oppure -3/4" 
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
+            </div>
+            <div>
+              <label class="block text-xs text-slate-400 mb-1">Passaggi che hai fatto (opzionale - aiuta a diagnosticare l'errore esatto):</label>
+              <textarea id="userWorkInput" rows="2" placeholder="Scrivi qui l'equazione che hai impostato o il passaggio chiave..." 
+                class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"></textarea>
+            </div>
+          </div>
+
+          <!-- Bottoni Azione: Invia, Skip (Segna Errore), Prossima -->
+          <div class="flex flex-wrap items-center gap-3 pt-2">
+            <button onclick="submitAnswer()" id="btnSubmit" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 px-4 rounded-lg transition">
+              ✔️ Verifica Risposta
+            </button>
+            <button onclick="skipQuestionAsError()" id="btnSkip" class="bg-rose-950 hover:bg-rose-900 text-rose-200 border border-rose-800 font-semibold py-2.5 px-4 rounded-lg transition">
+              ⏭️ Skip (Segna Errore → Box 1)
+            </button>
+            <button onclick="nextQuestion()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 py-2.5 px-4 rounded-lg font-semibold transition">
+              Prossimo →
+            </button>
+          </div>
+        </div>
+
+        <!-- Colonna Destra: Grafico Visivo / Figura del Libro -->
+        <div class="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col items-center justify-center shadow-lg">
+          <div class="w-full flex justify-between items-center mb-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Rappresentazione Visiva</span>
+            <span id="visualCaption" class="text-xs text-indigo-400">Interattivo (Zoom/Pan)</span>
+          </div>
+          <!-- Contenitore JSXGraph -->
+          <div id="jxgbox" class="w-full aspect-square max-h-[360px] bg-slate-950 rounded-lg border border-slate-800 overflow-hidden"></div>
+          <!-- Contenitore Snapshot Pagina PDF (se estratto dal libro) -->
+          <canvas id="pdfPageCanvas" class="hidden w-full rounded-lg border border-slate-800 mt-2"></canvas>
+        </div>
+
+      </div>
+
+      <!-- PANNELLO FEEDBACK E DOPPIA RISOLUZIONE (Compare dopo Invio o Skip) -->
+      <div id="feedbackSection" class="hidden space-y-4">
+        
+        <!-- Banner Esito e Diagnostica Errore -->
+        <div id="diagnosticBanner" class="p-4 rounded-xl border">
+          <h3 id="diagnosticTitle" class="font-bold text-base mb-1"></h3>
+          <p id="diagnosticText" class="text-sm leading-relaxed"></p>
+        </div>
+
+        <!-- Confronto Risolutivo: Metodo del Libro vs Hack Desmos College Board -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          
+          <!-- Metodo 1: Come lo risolve il Libro -->
+          <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+            <div class="flex items-center gap-2 text-indigo-400 font-bold text-sm uppercase tracking-wider mb-3">
+              <span>📖</span> <span>Metodo Analitico del Libro</span>
+            </div>
+            <div id="bookMethodText" class="text-sm text-slate-200 space-y-2 leading-relaxed select-text"></div>
+          </div>
+
+          <!-- Metodo 2: Come risolverlo su Desmos (College Board Edition) -->
+          <div class="bg-slate-900 border border-emerald-900/60 rounded-xl p-5">
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2 text-emerald-400 font-bold text-sm uppercase tracking-wider">
+                <span>⚡</span> <span>Strategia Desmos (Digital SAT)</span>
+              </div>
+              <span class="text-[11px] bg-emerald-950 text-emerald-300 px-2 py-0.5 rounded border border-emerald-800">Salva-Tempo</span>
+            </div>
+            <div id="desmosMethodText" class="text-sm text-slate-200 space-y-2 leading-relaxed select-text"></div>
+          </div>
+
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- MODALE 1: CHEATSHEET PROPRIETÀ E FORMULE GEOMETRICHE -->
+  <div id="cheatSheetModal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-5xl w-full max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+      <div class="px-6 py-4 bg-slate-800 flex justify-between items-center border-b border-slate-700">
+        <div>
+          <h2 class="text-lg font-bold text-amber-400">📐 Digital SAT Math CheatSheet Completo</h2>
+          <p class="text-xs text-slate-300">Tutte le formule di riferimento ufficiali + le identità algebriche e geometriche ad alto rendimento</p>
+        </div>
+        <button onclick="toggleCheatSheet()" class="text-slate-400 hover:text-white text-xl font-bold px-2">✕</button>
+      </div>
+      
+      <div class="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-6 text-sm" id="cheatSheetContent">
+        
+        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+          <h3 class="font-bold text-indigo-400 border-b border-slate-800 pb-1">1. Algebra & Sistemi Lineari</h3>
+          <p>• <b>Forma Esplicita (Slope-Intercept):</b> $y = mx + b$ dove $m = \frac{y_2 - y_1}{x_2 - x_1}$.</p>
+          <p>• <b>Numero di Soluzioni di un Sistema Lineare:</b><br>
+             Dato $a_1x + b_1y = c_1$ e $a_2x + b_2y = c_2$:<br>
+             - <b>Infinite soluzioni:</b> $\frac{a_1}{a_2} = \frac{b_1}{b_2} = \frac{c_1}{c_2}$ (stessa retta)<br>
+             - <b>Nessuna soluzione:</b> $\frac{a_1}{a_2} = \frac{b_1}{b_2} \neq \frac{c_1}{c_2}$ (rette parallele)<br>
+             - <b>Una soluzione:</b> $\frac{a_1}{a_2} \neq \frac{b_1}{b_2}$</p>
+          <p>• <b>Distanza e Punto Medio:</b> $d = \sqrt{(x_2-x_1)^2 + (y_2-y_1)^2}$, $M = \left(\frac{x_1+x_2}{2}, \frac{y_1+y_2}{2}\right)$.</p>
+        </div>
+
+        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+          <h3 class="font-bold text-indigo-400 border-b border-slate-800 pb-1">2. Quadratica & Polinomi (Advanced Math)</h3>
+          <p>• <b>Forme della Parabola:</b><br>
+             - Standard: $y = ax^2 + bx + c$ (Vertice: $x_V = -\frac{b}{2a}$)<br>
+             - Vertice: $y = a(x - h)^2 + k$ con vertice in $(h, k)$<br>
+             - Fattorizzata: $y = a(x - r_1)(x - r_2)$</p>
+          <p>• <b>Somma e Prodotto delle Radici (Viète):</b><br>
+             Somma $r_1 + r_2 = -\frac{b}{a}$ &nbsp;|&nbsp; Prodotto $r_1 \cdot r_2 = \frac{c}{a}$.</p>
+          <p>• <b>Discriminante ($\Delta = b^2 - 4ac$):</b><br>
+             $\Delta > 0$ (2 sol. reali), $\Delta = 0$ (1 sol. reale tangente), $\Delta < 0$ (0 sol. reali).</p>
+        </div>
+
+        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+          <h3 class="font-bold text-indigo-400 border-b border-slate-800 pb-1">3. Geometria Piana, Cerchi e Triangoli</h3>
+          <p>• <b>Equazione del Cerchio:</b> $(x - h)^2 + (y - k)^2 = r^2$ con centro $(h, k)$ e raggio $r$.</p>
+          <p>• <b>Arco e Settore Circolare (in radianti):</b><br>
+             Lunghezza arco $s = r\theta$ &nbsp;|&nbsp; Area settore $A = \frac{1}{2}r^2\theta$.</p>
+          <p>• <b>Triangoli Rettangoli Speciali:</b><br>
+             - $45^\circ\text{-}45^\circ\text{-}90^\circ$: lati $x, x, x\sqrt{2}$<br>
+             - $30^\circ\text{-}60^\circ\text{-}90^\circ$: lati $x, x\sqrt{3}, 2x$</p>
+          <p>• <b>Trigonometria & Angoli Complementari:</b> $\sin(x^\circ) = \cos(90^\circ - x^\circ)$.</p>
+        </div>
+
+        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+          <h3 class="font-bold text-indigo-400 border-b border-slate-800 pb-1">4. Volumi, Statistica & Comandi Desmos</h3>
+          <p>• <b>Volumi Ufficiali SAT:</b> Cilindro $V = \pi r^2 h$ | Sfera $V = \frac{4}{3}\pi r^3$ | Cono $V = \frac{1}{3}\pi r^2 h$ | Piramide $V = \frac{1}{3}lwh$.</p>
+          <p>• <b>Esponenziali & Percentuali:</b> $y = a(1 \pm r)^t$.</p>
+          <p>• <b>Comandi Rapidi Desmos SAT:</b><br>
+             - <code>y1 ~ m x1 + b</code> (Regressione su tabella punti)<br>
+             - <code>mean(1, 4, 7, 10)</code> e <code>median(...)</code><br>
+             - <code>stdev(...)</code> per confrontare la dispersione dei dati<br>
+             - Digita <code>slider</code> quando hai costanti $k$ o $a$ per testare equivalenze.</p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- MODALE 2: CALCOLATRICE DESMOS INTEGRATA -->
+  <div id="desmosModal" class="hidden fixed inset-0 bg-black/75 z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden shadow-2xl">
+      <div class="px-4 py-3 bg-slate-800 flex justify-between items-center border-b border-slate-700">
+        <span class="font-bold text-sm text-emerald-400">📈 Desmos Graphing Calculator (Ambiente di Test)</span>
+        <button onclick="toggleDesmosModal()" class="text-slate-300 hover:text-white font-bold px-2">✕ Chiudi</button>
+      </div>
+      <iframe src="https://www.desmos.com/calculator" class="w-full flex-1 bg-white"></iframe>
+    </div>
+  </div>
+
+  <!-- MODALE 3: IMPOSTAZIONI API GEMINI (Per generare esercizi infiniti dai tuoi PDF) -->
+  <div id="settingsModal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 space-y-4">
+      <div class="flex justify-between items-center">
+        <h3 class="font-bold text-base">⚙️ Configurazione AI & Timer</h3>
+        <button onclick="toggleSettings()" class="text-slate-400 hover:text-white">✕</button>
+      </div>
+      <div class="space-y-2 text-xs text-slate-300">
+        <label class="block font-semibold">Gemini API Key (Opzionale ma consigliata per i PDF):</label>
+        <input type="password" id="geminiApiKey" placeholder="AIzaSy..." class="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm">
+        <p class="text-[11px] text-slate-400">
+          Inserendo la tua chiave gratuita di Google AI Studio, quando carichi un libro in PDF l'app legge le pagine che scegli, crea in automatico l'albero degli argomenti, genera esercizi identici a quelli del testo e analizza i tuoi errori algebrici in tempo reale. La chiave resta salvata solo nel tuo browser.
+        </p>
+      </div>
+      <div class="space-y-2 text-xs text-slate-300">
+        <label class="block font-semibold">Soglia Allarme Timer SAT (secondi):</label>
+        <input type="number" id="timerThresholdInput" value="95" class="w-full bg-slate-950 border border-slate-700 rounded p-2 text-sm">
+        <p class="text-[11px] text-slate-400">Nel Digital SAT Math hai 35 minuti per 22 domande (~95 secondi a domanda).</p>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="saveSettings()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-xs font-bold">Salva Impostazioni</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Configurazione Worker PDF.js
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    // STATO DELL'APPLICAZIONE E DATABASE DI ESEMPIO PRE-CARICATO
+    let satTimeLimit = parseInt(localStorage.getItem('sat_timer_limit') || '95', 10);
+    let currentSeconds = 0;
+    let timerInterval = null;
+    let loadedPdfDoc = null;
+    let currentQuestionIndex = 0;
+    let activeQuestionsList = [];
+
+    const defaultQuestionsDB = [
+      {
+        id: "alg_sys_1",
+        topic: "1. Algebra",
+        subtopic: "1.1 Sistemi Lineari con Parametro (Nessuna Soluzione)",
+        source: "Esempio Capitolo 3 - Pag. 42",
+        title: "Sistema Lineare Parametrico",
+        question: "Nel sistema di equazioni lineari qui sotto, $k$ è una costante. Se il sistema non ha alcuna soluzione (no solution), qual è il valore di $k$? $$\\begin{cases} 3x - 4y = 10 \\\\ kx + 6y = 15 \\end{cases}$$",
+        options: [
+          { label: "A", text: "$-4.5$" },
+          { label: "B", text: "$-2$" },
+          { label: "C", text: "$2$" },
+          { label: "D", text: "$4.5$" }
+        ],
+        correctAnswer: "A",
+        acceptableValues: ["A", "-4.5", "-9/2"],
+        commonMistakes: {
+          "D": "Hai dimenticato il segno meno! Nella prima equazione $y$ ha coefficiente $-4$, nella seconda $+6$: il rapporto dei coefficienti deve rispettare i segni.",
+          "B": "Hai invertito il rapporto moltiplicando per $\\frac{4}{6}$ invece che uguagliare i coefficienti angolari $-\\frac{3}{-4} = -\\frac{k}{6}$."
+        },
+        bookExplanation: "1. Due rette nel piano non hanno intersezioni se e solo se sono **parallele e distinte** (stesso coefficiente angolare $m$, diversa intercetta $q$).<br>2. Impostiamo la proporzione tra i coefficienti di $x$ e $y$: $$\\frac{3}{k} = \\frac{-4}{6}$$<br>3. Moltiplichiamo incrociato: $-4k = 18 \\implies k = -\\frac{18}{4} = -4.5$.<br>4. Verifichiamo che non siano coincidenti: $\\frac{10}{15} = \\frac{2}{3} \\neq -\\frac{4}{6}$, quindi nessuna soluzione.",
+        desmosExplanation: "1. Apri Desmos e digita esattamente entrambe le equazioni:<br><code>3x - 4y = 10</code><br><code>kx + 6y = 15</code><br>2. Clicca su **add slider** per $k$.<br>3. Trascina lo slider o digita direttamente i valori delle opzioni ($-4.5, -2, 2, 4.5$): vedrai subito che a <code>k = -4.5</code> le due rette diventano perfettamente parallele senza toccarsi.",
+        visualConfig: {
+          type: "lines",
+          boundingbox: [-8, 8, 8, -8],
+          lines: [
+            { p1: [0, -2.5], p2: [4, 0.5], color: "#6366f1", name: "3x - 4y = 10" },
+            { p1: [0, 2.5], p2: [4, 5.5], color: "#f43f5e", name: "-4.5x + 6y = 15 (Parallela)" }
+          ]
+        }
+      },
+      {
+        id: "adv_quad_1",
+        topic: "2. Advanced Math",
+        subtopic: "2.1 Intersezioni Parabola-Retta & Discriminante",
+        source: "Generato da Esempio Capitolo 7",
+        title: "Condizione di Tangenza Parabola-Retta",
+        question: "Nel piano $xy$, la parabola di equazione $y = 2x^2 - 8x + 11$ interseca la retta orizzontale $y = c$ in **un solo punto**. Qual è il valore della costante $c$?",
+        options: [
+          { label: "A", text: "$2$" },
+          { label: "B", text: "$3$" },
+          { label: "C", text: "$4$" },
+          { label: "D", text: "$11$" }
+        ],
+        correctAnswer: "B",
+        acceptableValues: ["B", "3"],
+        commonMistakes: {
+          "A": "$x = 2$ è l'ascissa ($x_V$) del vertice, ma la domanda chiede $y = c$, ovvero l'ordinata ($y_V$) del vertice!",
+          "D": "$11$ è l'intercetta sull'asse $y$ (quando $x=0$), non il punto di minimo della parabola."
+        },
+        bookExplanation: "1. Una retta orizzontale $y = c$ interseca una parabola in un solo punto se e solo se passa esattamente per il suo **vertice**.<br>2. Calcoliamo l'ascissa del vertice: $$x_V = -\\frac{b}{2a} = -\\frac{-8}{2(2)} = 2$$<br>3. Sostituiamo $x = 2$ nell'equazione della parabola per trovare l'ordinata $y_V = c$: $$c = 2(2)^2 - 8(2) + 11 = 8 - 16 + 11 = 3$$",
+        desmosExplanation: "1. Scrivi in Desmos: <code>y = 2x^2 - 8x + 11</code>.<br>2. Clicca sul punto più basso (il vertice) della parabola disegnata: Desmos mostrerà istantaneamente il punto grigio <b>(2, 3)</b>.<br>3. Poiché la retta è $y = c$, ti basta leggere la coordinata $y$ del vertice: <b>3</b>. Tempo richiesto: <b>8 secondi</b>.",
+        visualConfig: {
+          type: "parabola",
+          boundingbox: [-2, 12, 6, -1],
+          func: (x) => 2*x*x - 8*x + 11,
+          tangentY: 3,
+          vertex: [2, 3]
+        }
+      },
+      {
+        id: "geo_circ_1",
+        topic: "3. Geometry & Trig",
+        subtopic: "3.1 Equazione del Cerchio e Completamento del Quadrato",
+        source: "Esempio Capitolo 11 - Cerchi nel piano xy",
+        title: "Raggio del Cerchio dalla Forma Espansa",
+        question: "L'equazione $x^2 + y^2 - 6x + 8y = 24$ rappresenta un cerchio nel piano $xy$. Qual è la lunghezza del **raggio** del cerchio?",
+        options: [
+          { label: "A", text: "$5$" },
+          { label: "B", text: "$7$" },
+          { label: "C", text: "$25$" },
+          { label: "D", text: "$49$" }
+        ],
+        correctAnswer: "B",
+        acceptableValues: ["B", "7"],
+        commonMistakes: {
+          "D": "$49$ è uguale a $r^2$, non al raggio $r$! Ricorda sempre di estrarre la radice quadrata alla fine.",
+          "A": "Hai calcolato $\\sqrt{3^2 + (-4)^2} = 5$, dimenticando di sommare il $24$ già presente a destra dell'uguale."
+        },
+        bookExplanation: "1. Raggruppiamo i termini in $x$ e $y$ per **completare il quadrato**: $$(x^2 - 6x) + (y^2 + 8y) = 24$$<br>2. Aggiungiamo $(\\frac{-6}{2})^2 = 9$ e $(\\frac{8}{2})^2 = 16$ a entrambi i membri:<br>$$(x - 3)^2 + (y + 4)^2 = 24 + 9 + 16 = 49$$<br>3. Confrontando con $(x-h)^2 + (y-k)^2 = r^2$, otteniamo $r^2 = 49 \\implies r = 7$.",
+        desmosExplanation: "1. Digita direttamente l'equazione implicita in Desmos: <code>x^2 + y^2 - 6x + 8y = 24</code>.<br>2. Osserva il cerchio: il punto più a sinistra ha $x = -4$ e il punto più a destra ha $x = 10$.<br>3. Il diametro è la distanza orizzontale $10 - (-4) = 14$, quindi il raggio è $14 / 2 = 7$. Non serve fare alcun completamento del quadrato a mano!",
+        visualConfig: {
+          type: "circle",
+          boundingbox: [-6, 5, 12, -13],
+          center: [3, -4],
+          radius: 7
+        }
+      }
+    ];
+
+    // GESTIONE SCATOLE DI LEITNER (Salvate in LocalStorage)
+    // Struttura: { questionId: boxNumber (1..5) }
+    let leitnerState = JSON.parse(localStorage.getItem('sat_leitner_boxes') || '{}');
+    let customQuestions = JSON.parse(localStorage.getItem('sat_custom_questions') || '[]');
+    let allQuestions = [...defaultQuestionsDB, ...customQuestions];
+
+    function initLeitnerForQuestions() {
+      allQuestions.forEach(q => {
+        if (!leitnerState[q.id]) leitnerState[q.id] = 1;
+      });
+      saveLeitnerState();
+    }
+
+    function saveLeitnerState() {
+      localStorage.setItem('sat_leitner_boxes', JSON.stringify(leitnerState));
+      renderLeitnerUI();
+    }
+
+    function renderLeitnerUI() {
+      const counts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+      allQuestions.forEach(q => {
+        const box = leitnerState[q.id] || 1;
+        counts[box] = (counts[box] || 0) + 1;
+      });
+
+      const colors = {
+        1: "border-rose-600 bg-rose-950/60 text-rose-300",
+        2: "border-orange-600 bg-orange-950/60 text-orange-300",
+        3: "border-amber-600 bg-amber-950/60 text-amber-300",
+        4: "border-emerald-600 bg-emerald-950/60 text-emerald-300",
+        5: "border-indigo-600 bg-indigo-950/60 text-indigo-300"
+      };
+
+      const container = document.getElementById('leitnerBoxesUI');
+      container.innerHTML = '';
+      for (let b = 1; b <= 5; b++) {
+        container.innerHTML += `
+          <button onclick="filterByLeitnerBox(${b})" class="border rounded-lg p-1.5 flex flex-col items-center hover:scale-105 transition ${colors[b]}">
+            <span class="text-[10px] font-bold uppercase">Box ${b}</span>
+            <span class="text-base font-black">${counts[b]}</span>
+          </button>
+        `;
+      }
+    }
+
+    // ALBERO ARGOMENTI E SUB-ARGOMENTI
+    function renderTopicsTree() {
+      const treeContainer = document.getElementById('topicsTree');
+      const grouped = {};
+      allQuestions.forEach(q => {
+        if (!grouped[q.topic]) grouped[q.topic] = {};
+        if (!grouped[q.topic][q.subtopic]) grouped[q.topic][q.subtopic] = [];
+        grouped[q.topic][q.subtopic].push(q);
+      });
+
+      treeContainer.innerHTML = '';
+      Object.keys(grouped).forEach(topic => {
+        let subHtml = '';
+        Object.keys(grouped[topic]).forEach(sub => {
+          const count = grouped[topic][sub].length;
+          subHtml += `
+            <button onclick="selectSubtopic('${topic.replace(/'/g, "\\'")}', '${sub.replace(/'/g, "\\'")}')" 
+              class="w-full text-left pl-3 py-1.5 rounded hover:bg-slate-800 text-xs text-slate-300 flex justify-between items-center transition">
+              <span class="truncate pr-2">↳ ${sub}</span>
+              <span class="bg-slate-800 px-1.5 py-0.5 rounded text-[10px] text-indigo-400 border border-slate-700">${count}</span>
+            </button>
+          `;
+        });
+
+        treeContainer.innerHTML += `
+          <div class="space-y-1">
+            <div class="font-bold text-xs text-indigo-300 uppercase tracking-wide">${topic}</div>
+            <div class="space-y-0.5 border-l border-slate-800 ml-1">${subHtml}</div>
+          </div>
+        `;
+      });
+    }
+
+    function selectSubtopic(topic, subtopic) {
+      activeQuestionsList = allQuestions.filter(q => q.topic === topic && q.subtopic === subtopic);
+      currentQuestionIndex = 0;
+      loadQuestion(activeQuestionsList[0]);
+    }
+
+    function filterByLeitnerBox(boxNum) {
+      const filtered = allQuestions.filter(q => (leitnerState[q.id] || 1) === boxNum);
+      if (filtered.length === 0) {
+        alert(`Nessun esercizio attualmente nella Box ${boxNum}!`);
+        return;
+      }
+      activeQuestionsList = filtered;
+      currentQuestionIndex = 0;
+      loadQuestion(activeQuestionsList[0]);
+    }
+
+    function startLeitnerReview() {
+      // Ordina dando priorità assoluta a Box 1 (Errori & Skip), poi Box 2, ecc.
+      activeQuestionsList = [...allQuestions].sort((a, b) => (leitnerState[a.id] || 1) - (leitnerState[b.id] || 1));
+      currentQuestionIndex = 0;
+      loadQuestion(activeQuestionsList[0]);
+    }
+
+    // TIMER DIGITAL SAT (Lampeggia superati i 95 secondi)
+    function startQuestionTimer() {
+      clearInterval(timerInterval);
+      currentSeconds = 0;
+      const box = document.getElementById('timerBox');
+      box.classList.remove('timer-overtime', 'timer-warning');
+      updateTimerDisplay();
+
+      timerInterval = setInterval(() => {
+        currentSeconds++;
+        updateTimerDisplay();
+        if (currentSeconds >= satTimeLimit) {
+          box.classList.remove('timer-warning');
+          box.classList.add('timer-overtime');
+        } else if (currentSeconds >= satTimeLimit - 20) {
+          box.classList.add('timer-warning');
+        }
+      }, 1000);
+    }
+
+    function updateTimerDisplay() {
+      const mins = String(Math.floor(currentSeconds / 60)).padStart(2, '0');
+      const secs = String(currentSeconds % 60).padStart(2, '0');
+      document.getElementById('timerDisplay').textContent = `${mins}:${secs}`;
+    }
+
+    // CARICAMENTO DOMANDA E GRAFICO VISIVO JSXGRAPH
+    function loadQuestion(q) {
+      if (!q) return;
+      document.getElementById('feedbackSection').classList.add('hidden');
+      document.getElementById('userAnswerInput').value = '';
+      document.getElementById('userWorkInput').value = '';
+
+      document.getElementById('currentTopicBadge').textContent = q.topic;
+      document.getElementById('currentSubtopicBadge').textContent = q.subtopic;
+      document.getElementById('questionSourceBadge').textContent = q.source || 'Esercizio Generato';
+      document.getElementById('leitnerStatusBadge').textContent = `Leitner Box ${leitnerState[q.id] || 1}`;
+      document.getElementById('questionTitle').textContent = q.title;
+      document.getElementById('questionText').innerHTML = q.question;
+
+      // Render opzioni
+      const optContainer = document.getElementById('optionsContainer');
+      optContainer.innerHTML = '';
+      if (q.options && q.options.length > 0) {
+        q.options.forEach(opt => {
+          optContainer.innerHTML += `
+            <button onclick="selectOption('${opt.label}')" id="opt_btn_${opt.label}"
+              class="w-full text-left p-3 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 flex items-center gap-3 transition">
+              <span class="w-7 h-7 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center font-bold text-xs shrink-0">${opt.label}</span>
+              <span class="text-sm">${opt.text}</span>
+            </button>
+          `;
+        });
+      }
+
+      renderMathInElement(document.body, {
+        delimiters: [
+          {left: '$$', right: '$$', display: true},
+          {left: '$', right: '$', display: false}
+        ]
+      });
+
+      renderVisualDiagram(q.visualConfig);
+      startQuestionTimer();
+    }
+
+    function selectOption(label) {
+      document.getElementById('userAnswerInput').value = label;
+      ['A', 'B', 'C', 'D'].forEach(l => {
+        const btn = document.getElementById(`opt_btn_${l}`);
+        if (btn) {
+          btn.classList.toggle('border-indigo-500', l === label);
+          btn.classList.toggle('bg-indigo-950/40', l === label);
+        }
+      });
+    }
+
+    function renderVisualDiagram(cfg) {
+      const box = document.getElementById('jxgbox');
+      box.innerHTML = '';
+      if (!cfg) return;
+
+      const board = JXG.JSXGraph.initBoard('jxgbox', {
+        boundingbox: cfg.boundingbox || [-10, 10, 10, -10],
+        axis: true,
+        showCopyright: false,
+        showNavigation: true
+      });
+
+      if (cfg.type === 'lines' && cfg.lines) {
+        cfg.lines.forEach(l => {
+          board.create('line', [l.p1, l.p2], { strokeColor: l.color || '#6366f1', strokeWidth: 3, name: l.name || '', withLabel: true });
+        });
+      } else if (cfg.type === 'parabola') {
+        board.create('functiongraph', [cfg.func], { strokeColor: '#6366f1', strokeWidth: 3 });
+        if (cfg.tangentY !== undefined) {
+          board.create('line', [[0, cfg.tangentY], [1, cfg.tangentY]], { strokeColor: '#10b981', strokeWidth: 2, dash: 2 });
+        }
+        if (cfg.vertex) {
+          board.create('point', cfg.vertex, { name: `Vertice (${cfg.vertex[0]}, ${cfg.vertex[1]})`, size: 4, color: '#f43f5e' });
+        }
+      } else if (cfg.type === 'circle') {
+        const centerPt = board.create('point', cfg.center, { name: `C(${cfg.center[0]}, ${cfg.center[1]})`, size: 3, color: '#f43f5e' });
+        board.create('circle', [centerPt, cfg.radius], { strokeColor: '#6366f1', strokeWidth: 3 });
+      }
+    }
+
+    // VERIFICA RISPOSTA, SKIP E AGGIORNAMENTO SCATOLE DI LEITNER
+    function submitAnswer() {
+      const q = activeQuestionsList[currentQuestionIndex];
+      const rawAns = document.getElementById('userAnswerInput').value.trim().toUpperCase();
+      if (!rawAns) {
+        alert("Inserisci o seleziona una risposta (oppure premi Skip se vuoi saltarla e segnarla come errore).");
+        return;
+      }
+
+      clearInterval(timerInterval);
+      const isCorrect = q.acceptableValues.map(v => v.toUpperCase()).includes(rawAns);
+
+      if (isCorrect) {
+        // Promuove nella scatola di Leitner successiva (fino a Box 5)
+        leitnerState[q.id] = Math.min(5, (leitnerState[q.id] || 1) + 1);
+      } else {
+        // Retrocede immediatamente in Box 1 per lo Spaced Repetition
+        leitnerState[q.id] = 1;
+      }
+      saveLeitnerState();
+      showFeedbackPanel(q, isCorrect, rawAns, false);
+    }
+
+    function skipQuestionAsError() {
+      const q = activeQuestionsList[currentQuestionIndex];
+      clearInterval(timerInterval);
+      // Skip forza l'esercizio nella Scatola 1 di Leitner come errore da ripassare
+      leitnerState[q.id] = 1;
+      saveLeitnerState();
+      showFeedbackPanel(q, false, "SKIP", true);
+    }
+
+    function showFeedbackPanel(q, isCorrect, userAns, isSkipped) {
+      const section = document.getElementById('feedbackSection');
+      const banner = document.getElementById('diagnosticBanner');
+      const title = document.getElementById('diagnosticTitle');
+      const text = document.getElementById('diagnosticText');
+
+      section.classList.remove('hidden');
+      document.getElementById('leitnerStatusBadge').textContent = `Leitner Box ${leitnerState[q.id]}`;
+
+      if (isCorrect) {
+        banner.className = "p-4 rounded-xl border bg-emerald-950/50 border-emerald-700 text-emerald-200";
+        title.textContent = `✅ Risposta Esatta (${q.correctAnswer}) in ${currentSeconds}s! Promosso in Box ${leitnerState[q.id]}.`;
+        text.innerHTML = currentSeconds > satTimeLimit 
+          ? `Ottimo lavoro sul risultato, ma hai impiegato <b>${currentSeconds} secondi</b> (oltre il target di ${satTimeLimit}s del Digital SAT). Guarda a destra come risolverlo in meno di 15 secondi con <b>Desmos</b>!`
+          : `Eccellente velocità (${currentSeconds}s). Confronta comunque il tuo procedimento con lo shortcut su Desmos qui sotto.`;
+      } else {
+        banner.className = "p-4 rounded-xl border bg-rose-950/50 border-rose-700 text-rose-200";
+        title.textContent = isSkipped 
+          ? `⏭️ Domanda Saltata → Inserita in Leitner Box 1 (Da Ripassare)`
+          : `❌ Risposta Errata (Hai risposto: ${userAns} | Corretta: ${q.correctAnswer}) → Spostato in Leitner Box 1`;
+        
+        const specificDiagnosis = (q.commonMistakes && q.commonMistakes[userAns]) 
+          ? q.commonMistakes[userAns]
+          : "Controlla attentamente i segni o l'impostazione dell'equazione iniziale nel metodo del libro qui sotto.";
+        text.innerHTML = isSkipped
+          ? `Hai saltato la domanda. La risposta corretta era <b>${q.correctAnswer}</b>. Studia il metodo grafico Desmos e quello analitico del libro: l'esercizio ti verrà riproposto nella tua coda di ripasso Leitner.`
+          : `<b>Diagnosi dell'errore:</b> ${specificDiagnosis}`;
+      }
+
+      document.getElementById('bookMethodText').innerHTML = q.bookExplanation;
+      document.getElementById('desmosMethodText').innerHTML = q.desmosExplanation;
+
+      renderMathInElement(section, {
+        delimiters: [
+          {left: '$$', right: '$$', display: true},
+          {left: '$', right: '$', display: false}
+        ]
+      });
+
+      section.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function nextQuestion() {
+      currentQuestionIndex = (currentQuestionIndex + 1) % activeQuestionsList.length;
+      loadQuestion(activeQuestionsList[currentQuestionIndex]);
+    }
+
+    // GENERATORE DI VARIANTI NUMERICHE ISTANTANEE (Esercizi gemelli a quelli del libro)
+    function generateTwinQuestion() {
+      const a = Math.floor(Math.random() * 5) + 2; // 2..6
+      const b = -(Math.floor(Math.random() * 5) + 2); // -2..-6
+      const mult = -1.5;
+      const b2 = b * mult;
+      const kAns = a * mult;
+
+      const newQ = {
+        id: "twin_" + Date.now(),
+        topic: "1. Algebra",
+        subtopic: "1.1 Sistemi Lineari con Parametro (Nessuna Soluzione)",
+        source: "Generato Dinamicamente dall'Esempio",
+        title: "Variante Parametrica Generata",
+        question: `Nel sistema qui sotto, $k$ è una costante. Se il sistema non ha soluzione, qual è il valore di $k$? $$\\begin{cases} ${a}x ${b}y = 12 \\\\ kx + ${b2}y = 7 \\end{cases}$$`,
+        options: [
+          { label: "A", text: `$${kAns}$` },
+          { label: "B", text: `$${-kAns}$` },
+          { label: "C", text: `$${a}$` },
+          { label: "D", text: `$${b2}$` }
+        ],
+        correctAnswer: "A",
+        acceptableValues: ["A", String(kAns)],
+        commonMistakes: {
+          "B": "Attenzione al segno del rapporto tra i coefficienti di $y$!",
+          "C": "Hai eguagliato direttamente a $a$ senza scalare in proporzione ai coefficienti di $y$."
+        },
+        bookExplanation: `Impostiamo la condizione di parallelismo: $$\\frac{${a}}{k} = \\frac{${b}}{${b2}} \\implies k = \\frac{${a} \\cdot (${b2})}{${b}} = ${kAns}$$`,
+        desmosExplanation: `Inserisci in Desmos <code>${a}x ${b}y = 12</code> e <code>kx + ${b2}y = 7</code> con lo slider per $k$. A $k = ${kAns}$ le rette diventano parallele.`,
+        visualConfig: {
+          type: "lines",
+          boundingbox: [-8, 8, 8, -8],
+          lines: [
+            { p1: [0, 12/b], p2: [4, (12 - a*4)/b], color: "#6366f1", name: "Retta 1" },
+            { p1: [0, 7/b2], p2: [4, (7 - kAns*4)/b2], color: "#10b981", name: "Retta 2" }
+          ]
+        }
+      };
+
+      allQuestions.push(newQ);
+      leitnerState[newQ.id] = 1;
+      saveLeitnerState();
+      renderTopicsTree();
+      activeQuestionsList.push(newQ);
+      currentQuestionIndex = activeQuestionsList.length - 1;
+      loadQuestion(newQ);
+    }
+
+    // UPLOAD E PARSING LIBRO PDF + GENERAZIONE AI
+    document.getElementById('pdfUpload').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const arrayBuffer = await file.arrayBuffer();
+      loadedPdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      document.getElementById('bookStatus').textContent = `Libro caricato: ${file.name} (${loadedPdfDoc.numPages} pagine)`;
+      document.getElementById('pageEnd').max = loadedPdfDoc.numPages;
+      document.getElementById('pageEnd').value = Math.min(5, loadedPdfDoc.numPages);
+      document.getElementById('pdfExtractControls').classList.remove('hidden');
+
+      // Renderizza anteprima della prima pagina selezionata nel canvas visivo
+      renderPdfPageToCanvas(1);
+    });
+
+    async function renderPdfPageToCanvas(pageNum) {
+      if (!loadedPdfDoc) return;
+      const page = await loadedPdfDoc.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 1.2 });
+      const canvas = document.getElementById('pdfPageCanvas');
+      const ctx = canvas.getContext('2d');
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+      canvas.classList.remove('hidden');
+      await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+    }
+
+    async function extractAndGenerateFromPDF() {
+      if (!loadedPdfDoc) return;
+      const start = parseInt(document.getElementById('pageStart').value, 10);
+      const end = parseInt(document.getElementById('pageEnd').value, 10);
+      const btn = document.getElementById('btnGeneratePDF');
+      btn.textContent = "⏳ Estrazione testo e problemi in corso...";
+
+      let extractedText = "";
+      for (let p = start; p <= Math.min(end, loadedPdfDoc.numPages); p++) {
+        const page = await loadedPdfDoc.getPage(p);
+        const textContent = await page.getTextContent();
+        const pageStr = textContent.items.map(item => item.str).join(' ');
+        extractedText += `\n--- PAGINA ${p} ---\n` + pageStr;
+      }
+
+      await renderPdfPageToCanvas(start);
+
+      const apiKey = localStorage.getItem('sat_gemini_api_key');
+      if (!apiKey) {
+        btn.textContent = "⚡ Estrai Argomenti e Genera Esercizi";
+        alert("Testo estratto dalle pagine " + start + "-" + end + "! Per generare automaticamente nuovi esercizi dal testo del tuo PDF direttamente nell'app, inserisci la tua Gemini API Key cliccando sull'icona ⚙️ in alto a destra (oppure incolla qui in chat i problemi del libro!).");
+        return;
+      }
+
+      try {
+        const prompt = `Sei un tutor esperto del Digital SAT Math. Analizza questo estratto di un libro di matematica:
+        ${extractedText.substring(0, 12000)}
+        Genera 3 esercizi in stile Digital SAT basati sugli esempi presenti nel testo, suddivisi per topic e subtopic.
+        Rispondi SOLO con un array JSON valido con questa struttura esatta:
+        [{"id":"gen_1","topic":"Nome Argomento","subtopic":"Nome Sub-argomento","source":"Estratto dal tuo PDF","title":"Titolo Problema","question":"Testo con LaTeX tra $","options":[{"label":"A","text":"..."},{"label":"B","text":"..."},{"label":"C","text":"..."},{"label":"D","text":"..."}],"correctAnswer":"A","acceptableValues":["A"],"commonMistakes":{"B":"Spiegazione errore B","C":"Spiegazione errore C"},"bookExplanation":"Passaggi formali come nel libro","desmosExplanation":"Passaggi esatti su Desmos College Board"}]`;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: "application/json" }
+          })
+        });
+
+        const data = await response.json();
+        const generatedArray = JSON.parse(data.candidates[0].content.parts[0].text);
+        generatedArray.forEach(q => {
+          allQuestions.push(q);
+          customQuestions.push(q);
+          leitnerState[q.id] = 1;
+        });
+        localStorage.setItem('sat_custom_questions', JSON.stringify(customQuestions));
+        saveLeitnerState();
+        renderTopicsTree();
+        activeQuestionsList = generatedArray;
+        currentQuestionIndex = 0;
+        loadQuestion(generatedArray[0]);
+      } catch (err) {
+        console.error(err);
+        alert("Errore durante la generazione AI dal PDF. Verifica la tua API Key nelle impostazioni.");
+      } finally {
+        btn.textContent = "⚡ Estrai Argomenti e Genera Esercizi";
+      }
+    }
+
+    // MODALI E IMPOSTAZIONI
+    function toggleCheatSheet() {
+      const modal = document.getElementById('cheatSheetModal');
+      modal.classList.toggle('hidden');
+      if (!modal.classList.contains('hidden')) {
+        renderMathInElement(document.getElementById('cheatSheetContent'), {
+          delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]
+        });
+      }
+    }
+
+    function toggleDesmosModal() {
+      document.getElementById('desmosModal').classList.toggle('hidden');
+    }
+
+    function toggleSettings() {
+      document.getElementById('geminiApiKey').value = localStorage.getItem('sat_gemini_api_key') || '';
+      document.getElementById('timerThresholdInput').value = satTimeLimit;
+      document.getElementById('settingsModal').classList.toggle('hidden');
+    }
+
+    function saveSettings() {
+      const key = document.getElementById('geminiApiKey').value.trim();
+      const lim = parseInt(document.getElementById('timerThresholdInput').value, 10) || 95;
+      localStorage.setItem('sat_gemini_api_key', key);
+      localStorage.setItem('sat_timer_limit', String(lim));
+      satTimeLimit = lim;
+      toggleSettings();
+    }
+
+    // AVVIO INIZIALE
+    window.addEventListener('DOMContentLoaded', () => {
+      initLeitnerForQuestions();
+      renderTopicsTree();
+      activeQuestionsList = [...allQuestions];
+      loadQuestion(activeQuestionsList[0]);
+    });
+  </script>
+</body>
+</html>
